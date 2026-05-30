@@ -1,4 +1,4 @@
-#include "../../src/log/log.h"
+#include "../../src/log.h"
 #include <QCoreApplication>
 #include <iostream>
 #include <cstdio>

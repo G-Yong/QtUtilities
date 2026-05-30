@@ -83,7 +83,7 @@
 
 namespace QtUtil {
 
-namespace detail {
+namespace cv_detail {
 
 inline QString imageExtension(QString format)
 {
@@ -100,7 +100,7 @@ inline QByteArray imageFormatName(QString format)
     return format.trimmed().toLatin1();
 }
 
-} // namespace detail
+} // namespace cv_detail
 
 // ---------------------------------------------------------------------------
 // matToImage
@@ -228,7 +228,7 @@ inline QByteArray matToBytes(const cv::Mat &mat,
     if (mat.empty())
         return QByteArray();
 
-    QString ext = detail::imageExtension(format);
+    QString ext = cv_detail::imageExtension(format);
     if (ext.isEmpty())
         return QByteArray();
 
@@ -267,7 +267,7 @@ inline QByteArray imageToBytes(const QImage &image,
     if (image.isNull())
         return QByteArray();
 
-    QByteArray formatName = detail::imageFormatName(format);
+    QByteArray formatName = cv_detail::imageFormatName(format);
     if (formatName.isEmpty())
         return QByteArray();
 
@@ -345,7 +345,7 @@ inline cv::Mat loadMat(const QString &imgPath, int flags = cv::IMREAD_UNCHANGED)
 inline int saveMat(const QString &imgPath, const cv::Mat &mat)
 {
     QFileInfo info(imgPath);
-    QString ext = detail::imageExtension(info.suffix());
+    QString ext = cv_detail::imageExtension(info.suffix());
     if (mat.empty() || ext.isEmpty())
         return -1;
 

@@ -61,6 +61,9 @@
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
+#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
+#endif
 #else
 #include <unistd.h>
 #endif
@@ -76,7 +79,7 @@ inline QString logDir = "../log";
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-namespace detail {
+namespace log_detail {
 
 // Shared mutex used by logToFile and the fd reader threads to serialise all
 // writes to the log file and console.
@@ -149,7 +152,7 @@ inline void writeToConsole(const QString &colorFmt, const QString &finalMsg)
     rawWrite(fd, bytes.constData(), bytes.size());
 }
 
-} // namespace detail
+} // namespace log_detail
 
 // ---------------------------------------------------------------------------
 // enableANSIConsole
@@ -176,7 +179,7 @@ inline void enableANSIConsole()
 // ---------------------------------------------------------------------------
 inline void logToFile(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
-    QMutexLocker lock(&detail::logMutex);
+    QMutexLocker lock(&log_detail::logMutex);
 
     // ANSI colour codes: 31=red  32=green  33=yellow  41=red-bg  57=default
     QString colorFmt;
@@ -194,8 +197,8 @@ inline void logToFile(QtMsgType type, const QMessageLogContext &context, const Q
                            .arg(QDateTime::currentDateTime().toString("hh:mm:ss.zzz"),
                                 level, fileStr, QString::number(context.line), msg);
 
-    detail::writeToFile(colorFmt, finalMsg);
-    detail::writeToConsole(colorFmt, finalMsg);
+    log_detail::writeToFile(colorFmt, finalMsg);
+    log_detail::writeToConsole(colorFmt, finalMsg);
 }
 
 // ---------------------------------------------------------------------------
@@ -222,18 +225,18 @@ public:
 
         flushStreams();
 
-        m_targetFd = detail::os_fileno(m_stream);
+        m_targetFd = log_detail::os_fileno(m_stream);
         if (m_targetFd < 0) return false;
 
         int fds[2];
-        if (detail::os_pipe(fds) != 0) return false;
+        if (log_detail::os_pipe(fds) != 0) return false;
         m_pipeRead    = fds[0];
         int pipeWrite = fds[1];
 
-        m_savedFd = detail::os_dup(m_targetFd);
+        m_savedFd = log_detail::os_dup(m_targetFd);
         if (m_savedFd < 0) {
-            detail::os_close(m_pipeRead);
-            detail::os_close(pipeWrite);
+            log_detail::os_close(m_pipeRead);
+            log_detail::os_close(pipeWrite);
             m_pipeRead = -1;
             return false;
         }
@@ -241,12 +244,12 @@ public:
         // Point the target fd at the pipe's write end, then drop our extra
         // reference so the only writer left is the target fd itself. That way
         // restoring the fd later yields EOF on the read end.
-        detail::os_dup2(pipeWrite, m_targetFd);
-        detail::os_close(pipeWrite);
+        log_detail::os_dup2(pipeWrite, m_targetFd);
+        log_detail::os_close(pipeWrite);
 
         // Expose the saved console fd for tee + Qt-message console output.
-        if (m_targetFd == detail::os_fileno(stdout)) detail::savedStdoutFd = m_savedFd;
-        else                                         detail::savedStderrFd = m_savedFd;
+        if (m_targetFd == log_detail::os_fileno(stdout)) log_detail::savedStdoutFd = m_savedFd;
+        else                                             log_detail::savedStderrFd = m_savedFd;
 
         m_active = true;
         m_thread = std::thread(&FdRedirector::readerLoop, this);
@@ -262,15 +265,15 @@ public:
 
         // Restoring the target fd drops the last writer reference to the pipe,
         // so the reader thread sees EOF and exits.
-        detail::os_dup2(m_savedFd, m_targetFd);
+        log_detail::os_dup2(m_savedFd, m_targetFd);
 
         if (m_thread.joinable()) m_thread.join();
 
-        if (m_targetFd == detail::os_fileno(stdout)) detail::savedStdoutFd = -1;
-        else                                         detail::savedStderrFd = -1;
+        if (m_targetFd == log_detail::os_fileno(stdout)) log_detail::savedStdoutFd = -1;
+        else                                             log_detail::savedStderrFd = -1;
 
-        detail::os_close(m_savedFd);
-        detail::os_close(m_pipeRead);
+        log_detail::os_close(m_savedFd);
+        log_detail::os_close(m_pipeRead);
         m_savedFd  = -1;
         m_pipeRead = -1;
         m_active   = false;
@@ -288,7 +291,7 @@ private:
     {
         char buf[4096];
         for (;;) {
-            auto n = detail::os_read(m_pipeRead, buf, sizeof(buf));
+            auto n = log_detail::os_read(m_pipeRead, buf, sizeof(buf));
             if (n <= 0) break;
             m_partial.append(buf, static_cast<size_t>(n));
 
@@ -309,18 +312,18 @@ private:
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.empty()) return;
 
-        QMutexLocker lock(&detail::logMutex);
+        QMutexLocker lock(&log_detail::logMutex);
 
         QString msg      = QString::fromLocal8Bit(line.c_str(), static_cast<int>(line.size()));
         QString finalMsg = QString("[%1][%2]\n %3")
                                .arg(QDateTime::currentDateTime().toString("hh:mm:ss.zzz"),
                                     m_level, msg);
 
-        detail::writeToFile(m_colorFmt, finalMsg);
+        log_detail::writeToFile(m_colorFmt, finalMsg);
 
         // Tee the captured line back to the real console.
         QByteArray bytes = (m_colorFmt.arg(finalMsg) + "\n").toLocal8Bit();
-        detail::rawWrite(m_savedFd, bytes.constData(), bytes.size());
+        log_detail::rawWrite(m_savedFd, bytes.constData(), bytes.size());
     }
 
     FILE        *m_stream   = nullptr;
@@ -340,45 +343,45 @@ private:
 // restoreStdout / restoreStderr  — stop capture and restore the original fd.
 // All functions are idempotent.
 // ---------------------------------------------------------------------------
-namespace detail {
+namespace log_detail {
     inline FdRedirector *stdoutRedirector = nullptr;
     inline FdRedirector *stderrRedirector = nullptr;
-} // namespace detail
+} // namespace log_detail
 
 /// Capture stdout (printf + std::cout) into the log system.
 inline void redirectStdout()
 {
-    if (detail::stdoutRedirector) return;
+    if (log_detail::stdoutRedirector) return;
     auto *r = new FdRedirector(stdout, "STDOUT", "\033[37m%1\033[0m");
-    if (r->start()) detail::stdoutRedirector = r;
+    if (r->start()) log_detail::stdoutRedirector = r;
     else            delete r;
 }
 
 /// Capture stderr (fprintf(stderr,...) + std::cerr) into the log system.
 inline void redirectStderr()
 {
-    if (detail::stderrRedirector) return;
+    if (log_detail::stderrRedirector) return;
     auto *r = new FdRedirector(stderr, "STDERR", "\033[31m%1\033[0m");
-    if (r->start()) detail::stderrRedirector = r;
+    if (r->start()) log_detail::stderrRedirector = r;
     else            delete r;
 }
 
 /// Stop capturing stdout and restore the original fd.
 inline void restoreStdout()
 {
-    if (!detail::stdoutRedirector) return;
-    detail::stdoutRedirector->stop();
-    delete detail::stdoutRedirector;
-    detail::stdoutRedirector = nullptr;
+    if (!log_detail::stdoutRedirector) return;
+    log_detail::stdoutRedirector->stop();
+    delete log_detail::stdoutRedirector;
+    log_detail::stdoutRedirector = nullptr;
 }
 
 /// Stop capturing stderr and restore the original fd.
 inline void restoreStderr()
 {
-    if (!detail::stderrRedirector) return;
-    detail::stderrRedirector->stop();
-    delete detail::stderrRedirector;
-    detail::stderrRedirector = nullptr;
+    if (!log_detail::stderrRedirector) return;
+    log_detail::stderrRedirector->stop();
+    delete log_detail::stderrRedirector;
+    log_detail::stderrRedirector = nullptr;
 }
 
 /// Convenience: capture both standard streams at once.
