@@ -91,21 +91,21 @@ inline int savedStderrFd = -1;
 
 // --- Cross-platform low-level fd helpers -----------------------------------
 #ifdef Q_OS_WIN
-inline int     os_pipe(int fds[2])                     { return _pipe(fds, 1 << 16, _O_BINARY); }
-inline int     os_dup(int fd)                          { return _dup(fd); }
-inline int     os_dup2(int oldFd, int newFd)           { return _dup2(oldFd, newFd); }
-inline int     os_close(int fd)                        { return _close(fd); }
-inline int     os_read(int fd, void *b, unsigned n)    { return _read(fd, b, n); }
+inline int     os_pipe(int fds[2])                         { return _pipe(fds, 1 << 16, _O_BINARY); }
+inline int     os_dup(int fd)                              { return _dup(fd); }
+inline int     os_dup2(int oldFd, int newFd)               { return _dup2(oldFd, newFd); }
+inline int     os_close(int fd)                            { return _close(fd); }
+inline int     os_read(int fd, void *b, unsigned n)        { return _read(fd, b, n); }
 inline int     os_write(int fd, const void *b, unsigned n) { return _write(fd, b, n); }
-inline int     os_fileno(FILE *f)                      { return _fileno(f); }
+inline int     os_fileno(FILE *f)                          { return _fileno(f); }
 #else
-inline int     os_pipe(int fds[2])                     { return ::pipe(fds); }
-inline int     os_dup(int fd)                          { return ::dup(fd); }
-inline int     os_dup2(int oldFd, int newFd)           { return ::dup2(oldFd, newFd); }
-inline int     os_close(int fd)                        { return ::close(fd); }
-inline ssize_t os_read(int fd, void *b, size_t n)      { return ::read(fd, b, n); }
-inline ssize_t os_write(int fd, const void *b, size_t n) { return ::write(fd, b, n); }
-inline int     os_fileno(FILE *f)                      { return ::fileno(f); }
+inline int     os_pipe(int fds[2])                         { return ::pipe(fds); }
+inline int     os_dup(int fd)                              { return ::dup(fd); }
+inline int     os_dup2(int oldFd, int newFd)               { return ::dup2(oldFd, newFd); }
+inline int     os_close(int fd)                            { return ::close(fd); }
+inline ssize_t os_read(int fd, void *b, size_t n)          { return ::read(fd, b, n); }
+inline ssize_t os_write(int fd, const void *b, size_t n)   { return ::write(fd, b, n); }
+inline int     os_fileno(FILE *f)                          { return ::fileno(f); }
 #endif
 
 // Write raw bytes to a fd, handling partial writes.
