@@ -1,6 +1,7 @@
 #include "../../src/log/log.h"
 #include <QCoreApplication>
 #include <iostream>
+#include <cstdio>
 
 int main(int argc, char *argv[])
 {
@@ -9,8 +10,7 @@ int main(int argc, char *argv[])
     QtUtil::enableANSIConsole();
     QtUtil::logDir = "logs";
     qInstallMessageHandler(QtUtil::logToFile);
-    QtUtil::redirectCout();                             // capture std::cout → log
-    QtUtil::redirectCerr();                             // capture std::cerr → log
+    QtUtil::redirectStdStreams();                       // capture printf + std::cout + std::cerr → log
     QtUtil::cleanExpiredLogFile(QtUtil::logDir, 30);
 
     // Qt messages
@@ -19,12 +19,17 @@ int main(int argc, char *argv[])
     qWarning()  << "Something looks odd";
     qCritical() << "Critical error occurred";
 
-    // std::cout / std::cerr — also captured and written to log file
+    // std::cout / std::cerr — captured at the fd level
     std::cout << "Hello from std::cout" << std::endl;
     std::cerr << "Hello from std::cerr" << std::endl;
 
-    QtUtil::restoreCout();
-    QtUtil::restoreCerr();
+    // printf / fprintf — now captured by the same mechanism
+    printf("Hello from printf %d\n", 42);
+    fprintf(stderr, "Hello from fprintf(stderr) %s\n", "oops");
+    fflush(stdout);
+    fflush(stderr);
+
+    QtUtil::restoreStdStreams();
 
     return 0;
 }
