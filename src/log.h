@@ -37,7 +37,9 @@
  * redirectStdStreams() captures output at the OS file-descriptor level (a pipe
  * read by a background thread), so printf, std::cout/std::cerr and any
  * C-library writes are all captured by one mechanism and tee'd back to the
- * real console.
+ * real console. On WebAssembly this function is a no-op; use Qt logging APIs
+ * there because fd redirection and background threads are not generally
+ * available in the browser runtime.
  */
 
 #ifndef LOG_H
@@ -95,6 +97,15 @@ inline QMutex logMutex;
 inline int savedStdoutFd = -1;
 inline int savedStderrFd = -1;
 inline bool cleanupRegistered = false;
+
+inline bool stdStreamRedirectSupported()
+{
+#if defined(Q_OS_WASM) || defined(__EMSCRIPTEN__)
+    return false;
+#else
+    return true;
+#endif
+}
 
 // --- Cross-platform low-level fd helpers -----------------------------------
 #ifdef Q_OS_WIN
@@ -366,6 +377,7 @@ namespace log_detail {
 inline void redirectStdout()
 {
     if (log_detail::stdoutRedirector) return;
+    if (!log_detail::stdStreamRedirectSupported()) return;
     auto *r = new FdRedirector(stdout, "STDOUT", "\033[37m%1\033[0m");
     if (r->start()) {
         log_detail::stdoutRedirector = r;
@@ -379,6 +391,7 @@ inline void redirectStdout()
 inline void redirectStderr()
 {
     if (log_detail::stderrRedirector) return;
+    if (!log_detail::stdStreamRedirectSupported()) return;
     auto *r = new FdRedirector(stderr, "STDERR", "\033[31m%1\033[0m");
     if (r->start()) {
         log_detail::stderrRedirector = r;
