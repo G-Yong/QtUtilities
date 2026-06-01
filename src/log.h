@@ -50,12 +50,15 @@
 #include <QFile>
 #include <QDir>
 #include <QDateTime>
-#include <QTextStream>
-#include <QTextCodec>
+#include <QByteArray>
+#include <QFileInfo>
+#include <QObject>
+#include <QStringList>
 #include <iostream>
 #include <string>
 #include <thread>
 #include <cstdio>
+#include <cstdlib>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -91,6 +94,7 @@ inline QMutex logMutex;
 // recursion / double logging).
 inline int savedStdoutFd = -1;
 inline int savedStderrFd = -1;
+inline bool cleanupRegistered = false;
 
 // --- Cross-platform low-level fd helpers -----------------------------------
 #ifdef Q_OS_WIN
@@ -123,6 +127,15 @@ inline void rawWrite(int fd, const char *data, size_t len)
     }
 }
 
+inline void cleanupRedirectors();
+
+inline void registerCleanup()
+{
+    if (cleanupRegistered) return;
+    std::atexit(cleanupRedirectors);
+    cleanupRegistered = true;
+}
+
 // Write a coloured formatted message to the daily log file.
 // Caller must already hold logMutex.
 inline void writeToFile(const QString &colorFmt, const QString &finalMsg)
@@ -135,9 +148,8 @@ inline void writeToFile(const QString &colorFmt, const QString &finalMsg)
                        + ".log";
         QFile file(path);
         if (file.open(QIODevice::Append | QIODevice::Text)) {
-            QTextStream out(&file);
-            out.setCodec(QTextCodec::codecForName("UTF-8"));
-            out << colorFmt.arg(finalMsg) << "\n";
+            const QByteArray bytes = (colorFmt.arg(finalMsg) + "\n").toUtf8();
+            file.write(bytes);
         }
     }
 }
@@ -247,6 +259,8 @@ public:
         log_detail::os_dup2(pipeWrite, m_targetFd);
         log_detail::os_close(pipeWrite);
 
+        std::setvbuf(m_stream, nullptr, _IONBF, 0);
+
         // Expose the saved console fd for tee + Qt-message console output.
         if (m_targetFd == log_detail::os_fileno(stdout)) log_detail::savedStdoutFd = m_savedFd;
         else                                             log_detail::savedStderrFd = m_savedFd;
@@ -353,8 +367,12 @@ inline void redirectStdout()
 {
     if (log_detail::stdoutRedirector) return;
     auto *r = new FdRedirector(stdout, "STDOUT", "\033[37m%1\033[0m");
-    if (r->start()) log_detail::stdoutRedirector = r;
-    else            delete r;
+    if (r->start()) {
+        log_detail::stdoutRedirector = r;
+        log_detail::registerCleanup();
+    } else {
+        delete r;
+    }
 }
 
 /// Capture stderr (fprintf(stderr,...) + std::cerr) into the log system.
@@ -362,8 +380,12 @@ inline void redirectStderr()
 {
     if (log_detail::stderrRedirector) return;
     auto *r = new FdRedirector(stderr, "STDERR", "\033[31m%1\033[0m");
-    if (r->start()) log_detail::stderrRedirector = r;
-    else            delete r;
+    if (r->start()) {
+        log_detail::stderrRedirector = r;
+        log_detail::registerCleanup();
+    } else {
+        delete r;
+    }
 }
 
 /// Stop capturing stdout and restore the original fd.
@@ -389,6 +411,15 @@ inline void redirectStdStreams() { redirectStdout(); redirectStderr(); }
 
 /// Convenience: restore both standard streams at once.
 inline void restoreStdStreams()  { restoreStderr();  restoreStdout(); }
+
+namespace log_detail {
+
+inline void cleanupRedirectors()
+{
+    restoreStdStreams();
+}
+
+} // namespace log_detail
 
 // ---------------------------------------------------------------------------
 // cleanExpiredLogFile

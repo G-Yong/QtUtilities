@@ -77,8 +77,6 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QSaveFile>
-#include <QTextStream>
-#include <QTextCodec>
 #include <QCryptographicHash>
 #include <QDirIterator>
 
@@ -102,9 +100,7 @@ inline QString readText(const QString &path)
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
         return QString();
-    QTextStream in(&f);
-    in.setCodec(QTextCodec::codecForName("UTF-8"));
-    return in.readAll();
+    return QString::fromUtf8(f.readAll());
 }
 
 // ---------------------------------------------------------------------------
