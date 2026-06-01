@@ -116,10 +116,18 @@ inline int     os_close(int fd)                            { return _close(fd); 
 inline int     os_read(int fd, void *b, unsigned n)        { return _read(fd, b, n); }
 inline int     os_write(int fd, const void *b, unsigned n) { return _write(fd, b, n); }
 inline int     os_fileno(FILE *f)                          { return _fileno(f); }
-#else
+#elif !defined(__EMSCRIPTEN__)
 inline int     os_pipe(int fds[2])                         { return ::pipe(fds); }
 inline int     os_dup(int fd)                              { return ::dup(fd); }
 inline int     os_dup2(int oldFd, int newFd)               { return ::dup2(oldFd, newFd); }
+inline int     os_close(int fd)                            { return ::close(fd); }
+inline ssize_t os_read(int fd, void *b, size_t n)          { return ::read(fd, b, n); }
+inline ssize_t os_write(int fd, const void *b, size_t n)   { return ::write(fd, b, n); }
+inline int     os_fileno(FILE *f)                          { return ::fileno(f); }
+#else // __EMSCRIPTEN__: pipe/dup syscalls unavailable in browsers
+inline int     os_pipe(int fds[2])                         { fds[0] = fds[1] = -1; return -1; }
+inline int     os_dup(int)                                 { return -1; }
+inline int     os_dup2(int, int)                           { return -1; }
 inline int     os_close(int fd)                            { return ::close(fd); }
 inline ssize_t os_read(int fd, void *b, size_t n)          { return ::read(fd, b, n); }
 inline ssize_t os_write(int fd, const void *b, size_t n)   { return ::write(fd, b, n); }
@@ -229,7 +237,9 @@ inline void logToFile(QtMsgType type, const QMessageLogContext &context, const Q
 // stderr) at the OS level: printf, std::cout/std::cerr and any C-library
 // output. Each complete line is routed through the shared log system (file +
 // real console) on a background reader thread.
+// Not compiled on WebAssembly (pipe/dup syscalls unsupported in browsers).
 // ---------------------------------------------------------------------------
+#if !defined(__EMSCRIPTEN__)
 class FdRedirector
 {
 public:
@@ -361,13 +371,16 @@ private:
     std::thread  m_thread;
     std::string  m_partial;
 };
+#endif // !defined(__EMSCRIPTEN__)
 
 // ---------------------------------------------------------------------------
 // redirectStdout / redirectStderr — start OS-level capture of stdout / stderr
 // (covers printf, std::cout/std::cerr and any C-library output).
 // restoreStdout / restoreStderr  — stop capture and restore the original fd.
-// All functions are idempotent.
+// All functions are idempotent. No-ops on WebAssembly.
 // ---------------------------------------------------------------------------
+#if !defined(__EMSCRIPTEN__)
+
 namespace log_detail {
     inline FdRedirector *stdoutRedirector = nullptr;
     inline FdRedirector *stderrRedirector = nullptr;
@@ -377,7 +390,6 @@ namespace log_detail {
 inline void redirectStdout()
 {
     if (log_detail::stdoutRedirector) return;
-    if (!log_detail::stdStreamRedirectSupported()) return;
     auto *r = new FdRedirector(stdout, "STDOUT", "\033[37m%1\033[0m");
     if (r->start()) {
         log_detail::stdoutRedirector = r;
@@ -391,7 +403,6 @@ inline void redirectStdout()
 inline void redirectStderr()
 {
     if (log_detail::stderrRedirector) return;
-    if (!log_detail::stdStreamRedirectSupported()) return;
     auto *r = new FdRedirector(stderr, "STDERR", "\033[31m%1\033[0m");
     if (r->start()) {
         log_detail::stderrRedirector = r;
@@ -419,20 +430,28 @@ inline void restoreStderr()
     log_detail::stderrRedirector = nullptr;
 }
 
+namespace log_detail {
+inline void cleanupRedirectors() { restoreStdStreams(); }
+} // namespace log_detail
+
+#else // __EMSCRIPTEN__: fd redirection unavailable — empty stubs
+
+inline void redirectStdout() {}
+inline void redirectStderr() {}
+inline void restoreStdout()  {}
+inline void restoreStderr()  {}
+
+namespace log_detail {
+inline void cleanupRedirectors() {}
+} // namespace log_detail
+
+#endif // !defined(__EMSCRIPTEN__)
+
 /// Convenience: capture both standard streams at once.
 inline void redirectStdStreams() { redirectStdout(); redirectStderr(); }
 
 /// Convenience: restore both standard streams at once.
 inline void restoreStdStreams()  { restoreStderr();  restoreStdout(); }
-
-namespace log_detail {
-
-inline void cleanupRedirectors()
-{
-    restoreStdStreams();
-}
-
-} // namespace log_detail
 
 // ---------------------------------------------------------------------------
 // cleanExpiredLogFile
