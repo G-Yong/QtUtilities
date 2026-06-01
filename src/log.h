@@ -56,11 +56,19 @@
 #include <QFileInfo>
 #include <QObject>
 #include <QStringList>
+
+#if !defined(Q_OS_WASM) && !defined(__EMSCRIPTEN__)
+#define QTUTIL_STD_STREAM_REDIRECT_SUPPORTED 1
+#else
+#define QTUTIL_STD_STREAM_REDIRECT_SUPPORTED 0
+#endif
+
+#if QTUTIL_STD_STREAM_REDIRECT_SUPPORTED
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <thread>
-#include <cstdio>
-#include <cstdlib>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -72,6 +80,7 @@
 #else
 #include <unistd.h>
 #endif
+#endif // QTUTIL_STD_STREAM_REDIRECT_SUPPORTED
 
 namespace QtUtil {
 
@@ -100,14 +109,11 @@ inline bool cleanupRegistered = false;
 
 inline bool stdStreamRedirectSupported()
 {
-#if defined(Q_OS_WASM) || defined(__EMSCRIPTEN__)
-    return false;
-#else
-    return true;
-#endif
+    return QTUTIL_STD_STREAM_REDIRECT_SUPPORTED != 0;
 }
 
 // --- Cross-platform low-level fd helpers -----------------------------------
+#if QTUTIL_STD_STREAM_REDIRECT_SUPPORTED
 #ifdef Q_OS_WIN
 inline int     os_pipe(int fds[2])                         { return _pipe(fds, 1 << 16, _O_BINARY); }
 inline int     os_dup(int fd)                              { return _dup(fd); }
@@ -116,18 +122,10 @@ inline int     os_close(int fd)                            { return _close(fd); 
 inline int     os_read(int fd, void *b, unsigned n)        { return _read(fd, b, n); }
 inline int     os_write(int fd, const void *b, unsigned n) { return _write(fd, b, n); }
 inline int     os_fileno(FILE *f)                          { return _fileno(f); }
-#elif !defined(__EMSCRIPTEN__)
+#else
 inline int     os_pipe(int fds[2])                         { return ::pipe(fds); }
 inline int     os_dup(int fd)                              { return ::dup(fd); }
 inline int     os_dup2(int oldFd, int newFd)               { return ::dup2(oldFd, newFd); }
-inline int     os_close(int fd)                            { return ::close(fd); }
-inline ssize_t os_read(int fd, void *b, size_t n)          { return ::read(fd, b, n); }
-inline ssize_t os_write(int fd, const void *b, size_t n)   { return ::write(fd, b, n); }
-inline int     os_fileno(FILE *f)                          { return ::fileno(f); }
-#else // __EMSCRIPTEN__: pipe/dup syscalls unavailable in browsers
-inline int     os_pipe(int fds[2])                         { fds[0] = fds[1] = -1; return -1; }
-inline int     os_dup(int)                                 { return -1; }
-inline int     os_dup2(int, int)                           { return -1; }
 inline int     os_close(int fd)                            { return ::close(fd); }
 inline ssize_t os_read(int fd, void *b, size_t n)          { return ::read(fd, b, n); }
 inline ssize_t os_write(int fd, const void *b, size_t n)   { return ::write(fd, b, n); }
@@ -145,14 +143,17 @@ inline void rawWrite(int fd, const char *data, size_t len)
         off += static_cast<size_t>(n);
     }
 }
+#endif // QTUTIL_STD_STREAM_REDIRECT_SUPPORTED
 
 inline void cleanupRedirectors();
 
 inline void registerCleanup()
 {
+#if QTUTIL_STD_STREAM_REDIRECT_SUPPORTED
     if (cleanupRegistered) return;
     std::atexit(cleanupRedirectors);
     cleanupRegistered = true;
+#endif
 }
 
 // Write a coloured formatted message to the daily log file.
@@ -178,9 +179,14 @@ inline void writeToFile(const QString &colorFmt, const QString &finalMsg)
 // Caller must already hold logMutex.
 inline void writeToConsole(const QString &colorFmt, const QString &finalMsg)
 {
+#if QTUTIL_STD_STREAM_REDIRECT_SUPPORTED
     int fd = (savedStdoutFd >= 0) ? savedStdoutFd : os_fileno(stdout);
     QByteArray bytes = (colorFmt.arg(finalMsg) + "\n").toLocal8Bit();
     rawWrite(fd, bytes.constData(), bytes.size());
+#else
+    Q_UNUSED(colorFmt)
+    Q_UNUSED(finalMsg)
+#endif
 }
 
 } // namespace log_detail
@@ -239,7 +245,7 @@ inline void logToFile(QtMsgType type, const QMessageLogContext &context, const Q
 // real console) on a background reader thread.
 // Not compiled on WebAssembly (pipe/dup syscalls unsupported in browsers).
 // ---------------------------------------------------------------------------
-#if !defined(__EMSCRIPTEN__)
+#if QTUTIL_STD_STREAM_REDIRECT_SUPPORTED
 class FdRedirector
 {
 public:
@@ -371,7 +377,7 @@ private:
     std::thread  m_thread;
     std::string  m_partial;
 };
-#endif // !defined(__EMSCRIPTEN__)
+#endif // QTUTIL_STD_STREAM_REDIRECT_SUPPORTED
 
 // ---------------------------------------------------------------------------
 // redirectStdout / redirectStderr — start OS-level capture of stdout / stderr
@@ -379,7 +385,7 @@ private:
 // restoreStdout / restoreStderr  — stop capture and restore the original fd.
 // All functions are idempotent. No-ops on WebAssembly.
 // ---------------------------------------------------------------------------
-#if !defined(__EMSCRIPTEN__)
+#if QTUTIL_STD_STREAM_REDIRECT_SUPPORTED
 
 namespace log_detail {
     inline FdRedirector *stdoutRedirector = nullptr;
@@ -434,7 +440,7 @@ namespace log_detail {
 inline void cleanupRedirectors() { restoreStdStreams(); }
 } // namespace log_detail
 
-#else // __EMSCRIPTEN__: fd redirection unavailable — empty stubs
+#else // fd redirection unavailable, e.g. WebAssembly
 
 inline void redirectStdout() {}
 inline void redirectStderr() {}
@@ -445,7 +451,7 @@ namespace log_detail {
 inline void cleanupRedirectors() {}
 } // namespace log_detail
 
-#endif // !defined(__EMSCRIPTEN__)
+#endif // QTUTIL_STD_STREAM_REDIRECT_SUPPORTED
 
 /// Convenience: capture both standard streams at once.
 inline void redirectStdStreams() { redirectStdout(); redirectStderr(); }
@@ -480,5 +486,7 @@ inline int cleanExpiredLogFile(const QString &dirPath, int keepDays = 365)
 }
 
 } // namespace QtUtil
+
+#undef QTUTIL_STD_STREAM_REDIRECT_SUPPORTED
 
 #endif // LOG_H
