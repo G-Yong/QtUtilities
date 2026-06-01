@@ -436,20 +436,12 @@ inline void restoreStderr()
     log_detail::stderrRedirector = nullptr;
 }
 
-namespace log_detail {
-inline void cleanupRedirectors() { restoreStdStreams(); }
-} // namespace log_detail
-
 #else // fd redirection unavailable, e.g. WebAssembly
 
 inline void redirectStdout() {}
 inline void redirectStderr() {}
 inline void restoreStdout()  {}
 inline void restoreStderr()  {}
-
-namespace log_detail {
-inline void cleanupRedirectors() {}
-} // namespace log_detail
 
 #endif // QTUTIL_STD_STREAM_REDIRECT_SUPPORTED
 
@@ -458,6 +450,10 @@ inline void redirectStdStreams() { redirectStdout(); redirectStderr(); }
 
 /// Convenience: restore both standard streams at once.
 inline void restoreStdStreams()  { restoreStderr();  restoreStdout(); }
+
+namespace log_detail {
+inline void cleanupRedirectors() { restoreStdStreams(); }
+} // namespace log_detail
 
 // ---------------------------------------------------------------------------
 // cleanExpiredLogFile
