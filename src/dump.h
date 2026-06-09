@@ -85,7 +85,6 @@
 
 #if QTUTIL_CRASH_DUMP_SUPPORTED
 #include <csignal>
-#include <cstdlib>
 
 #include <Windows.h>
 #include <DbgHelp.h>
@@ -98,7 +97,6 @@
 
 #else
 #include <csignal>
-#include <cstdlib>
 #endif // QTUTIL_CRASH_DUMP_SUPPORTED
 
 namespace QtUtil {
