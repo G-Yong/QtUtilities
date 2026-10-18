@@ -242,7 +242,7 @@ inline void logToFile(QtMsgType type, const QMessageLogContext &context, const Q
         }
     }
     
-    QString finalMsg = QString("[%1][%2][file:///%3:%4]\n %5")
+    QString finalMsg = QString("[%1][%2][file:/%3:%4]\n %5")
                            .arg(QDateTime::currentDateTime().toString("hh:mm:ss.zzz"),
                                 level, fileStr, QString::number(context.line), msg);
 
