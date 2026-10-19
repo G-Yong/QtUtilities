@@ -241,10 +241,22 @@ inline void logToFile(QtMsgType type, const QMessageLogContext &context, const Q
             fileStr = fileStr.mid(str.length());
         }
     }
-    
-    QString finalMsg = QString("[%1][%2][file:/%3:%4]\n %5")
+
+    // Qt Creator only turns "file://..." into a clickable link in the output
+    // pane (see Utils::OutputLineParser::isLinkTarget()), and it expects '/'
+    // as separator. Relative paths (what __FILE__ contains in a shadow build)
+    // are resolved by Qt Creator 21+ via FileInProjectFinder against the
+    // project directory. Absolute paths are emitted as "file:///E:/..." so
+    // that the Windows drive letter survives the URL parsing.
+    fileStr.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    const QString fileUrl = QDir::isAbsolutePath(fileStr)
+            ? QStringLiteral("file:///")
+              + (fileStr.startsWith(QLatin1Char('/')) ? fileStr.mid(1) : fileStr)
+            : QStringLiteral("file://") + fileStr;
+
+    QString finalMsg = QString("[%1][%2][%3:%4]\n %5")
                            .arg(QDateTime::currentDateTime().toString("hh:mm:ss.zzz"),
-                                level, fileStr, QString::number(context.line), msg);
+                                level, fileUrl, QString::number(context.line), msg);
 
     log_detail::writeToFile(colorFmt, finalMsg);
     log_detail::writeToConsole(colorFmt, finalMsg);
